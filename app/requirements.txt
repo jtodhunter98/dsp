@@ -1,0 +1,7 @@
+sqlalchemy
+MySQLclient
+pytest
+requests
+jinja2
+mimesis
+uvicorn
