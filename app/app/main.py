@@ -1,92 +1,109 @@
+
 import csv
 import os
 from os import path
 
-
-from fastapi import FastAPI
-from sqlalchemy import create_engine, Column, Integer, VARCHAR
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import session, sessionmaker
+import shutil
+from fastapi import FastAPI, File, UploadFile
+from fastapi.requests import Request
+from fastapi.responses import Response, FileResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.sql.functions import user
 from starlette.requests import Request
+import pyodbc
 
 from . import random_gen
 
 app = FastAPI()
 templates = Jinja2Templates(directory="app/templates/")
-engine = create_engine("mysql://root:password@db/test_db")
 
-Base = declarative_base()
-class User(Base):
-    __tablename__ = "test_table"
+connection_string = 'Driver={ODBC Driver 17 for SQL Server};Server=tcp:todjord-db.database.windows.net,1433;Database=dsp_db;Uid=todjord;Pwd=20fvoqf:;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
+conn = pyodbc.connect(connection_string)
 
-    id = Column(Integer, primary_key=True)
-    first_name = Column(VARCHAR(60))
-    last_name = Column(VARCHAR(60))
-    address = Column(VARCHAR(60))
-    phone_number = Column(VARCHAR(60))
+cursor = conn.cursor()
 
 
 @app.get("/")
-def index(request: Request):
-
+def index(
+    request: Request
+    ):
     return templates.TemplateResponse('index.html', context={'request': request})
 
 
 @app.get("/test_table")
 def test_table(request: Request):
-
-    Session = sessionmaker(bind=engine)
-
-    session = Session()
-    session.query(User).delete()
-    session.commit()
-    session.close()
     
+    create_query = '''
+    DROP TABLE IF EXISTS test_table;
+    CREATE TABLE test_table (
+    id INT NOT NULL IDENTITY,
+    first_name VARCHAR(60),
+    last_name VARCHAR(60),
+    address VARCHAR(60),
+    phone_number VARCHAR(60),
+    PRIMARY KEY (id)
+    );
+    '''
+    cursor.execute(create_query)
+    conn.commit()
     for i in range(5):
-        session = Session()
-        user = User(
-            first_name = random_gen.person_entry().first_name,
-            last_name = random_gen.person_entry().last_name,
-            address = random_gen.person_entry().address,
-            phone_number = random_gen.person_entry().phone_number
-        )
-        session.add(user)
-        session.commit()
-        session.close()
+        first_name = f"'{random_gen.person_entry().first_name}',"
+        last_name = f"'{random_gen.person_entry().last_name}',"
+        address = f"'{random_gen.person_entry().address}',"
+        phone_number = f"'{random_gen.person_entry().phone_number}'"
 
-    session = Session()
-    query_all = session.query(User)
-    session.close()
-    if path.exists('app/templates/temp.csv'):
-        os.remove('app/templates/temp.csv')
+        insert_query = '''
+        INSERT INTO test_table(first_name, last_name, address, phone_number) values(
+        ''' + first_name + last_name + address + phone_number +''');
+        '''
+        cursor.execute(insert_query)
 
-    with open('app/templates/temp.csv', 'w', newline='') as file:
-        writer = csv.writer(file)
-        for row in query_all:
-            writer.writerow([row.id, row.first_name, row.last_name, row.address, row.phone_number])
+    query_all = '''SELECT * FROM test_table'''
+    users = cursor.execute(query_all)
+
+    # if os.path.exists('app/csv/temp.csv'):
+    #     os.remove('app/csv/temp.csv')
+
+    # with open('app/csv/temp.csv', 'w', newline='') as file:
+    #     writer = csv.writer(file)
+    #     for row in users:
+    #         writer.writerow([row.id, row.first_name, row.last_name, row.address, row.phone_number])
 
     return templates.TemplateResponse('test_table.html', context={
         'request': request,
-        'users': query_all,
+        'users': users,
         })
 
+@app.get("/uploadfile/")
+def upload_csv(
+    request: Request,
+    file
+):
+
+    return templates.TemplateResponse(context={'request': request})
+
+@app.post("/uploadfile/")
+async def upload_csv_post(file: UploadFile = File(...)):
+    file_location = f"csv/{file.filename}"
+    with open(file_location, "r") as csv:
+        shutil.copyfileobj(file.file, csv)
+
+    url = str(file_location)
+
+    return {"filename": file.filename, "url": url}
 
 @app.get("/test_table/download")
-def test_table_download(request: Request):
+def test_table_download():
     # os.remove('temp.csv')
-    with open('temp.csv', 'w', newline='') as file:
+
+    query_all = '''SELECT * FROM test_table'''
+    users = cursor.execute(query_all)
+
+    if os.path.exists('app/csv/temp.csv'):
+        os.remove('app/csv/temp.csv')
+
+    with open('app/csv/temp.csv', 'w', newline='') as file:
         writer = csv.writer(file)
-
-        Session = sessionmaker(bind=engine)
-        session = Session()
-
-        query_all = session.query(User)
-        for row in query_all:
+        for row in users:
             writer.writerow([row.id, row.first_name, row.last_name, row.address, row.phone_number])
     
-    return templates.TemplateResponse('test_table.html', context={
-        'request': request,
-        'users': query_all,
-        })
+    return FileResponse('app/csv/temp.csv')

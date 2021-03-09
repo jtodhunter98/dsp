@@ -1,7 +1,9 @@
-sqlalchemy
 MySQLclient
 pytest
 requests
 jinja2
 mimesis
 uvicorn
+pyodbc==4.0.30
+python-multipart
+aiofiles
