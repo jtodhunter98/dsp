@@ -1,9 +1,15 @@
 
 import csv
 import os
-from os import path
+from os import path, read
+import re
+import pandas as pd
+import sys
+from io import StringIO
+
 
 import shutil
+from typing import Optional
 from fastapi import FastAPI, File, UploadFile
 from fastapi.requests import Request
 from fastapi.responses import Response, FileResponse
@@ -19,12 +25,20 @@ templates = Jinja2Templates(directory="app/templates/")
 connection_string = 'Driver={ODBC Driver 17 for SQL Server};Server=tcp:todjord-db.database.windows.net,1433;Database=dsp_db;Uid=todjord;Pwd=20fvoqf:;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;'
 conn = pyodbc.connect(connection_string)
 
+csv.field_size_limit(sys.maxsize)
+
 cursor = conn.cursor()
 
+def numbers(number):
+    array = []
+    for i in range (3):
+        array.append(number * 2)
+
+    return array
 
 @app.get("/")
 def index(
-    request: Request
+    request: Request,
     ):
     return templates.TemplateResponse('index.html', context={'request': request})
 
@@ -73,27 +87,70 @@ def test_table(request: Request):
         'users': users,
         })
 
-@app.get("/uploadfile/")
-def upload_csv(
+@app.get("/upload/")
+async def upload_csv(
     request: Request,
-    file
 ):
 
-    return templates.TemplateResponse(context={'request': request})
+    return templates.TemplateResponse('upload.html', context={'request': request})
 
 @app.post("/uploadfile/")
 async def upload_csv_post(file: UploadFile = File(...)):
-    file_location = f"csv/{file.filename}"
-    with open(file_location, "r") as csv:
-        shutil.copyfileobj(file.file, csv)
+    
+    data = await file.read()
+    data = data.decode()
 
-    url = str(file_location)
+    f = StringIO(data)
+    csv_list = []
+    reader = csv.reader(f, delimiter=',')
+    for row in reader:
+        csv_list.append(row)
+    headers = csv_list[0]
+    header_query = ""
 
-    return {"filename": file.filename, "url": url}
+    for header in headers:
+        header_query = f'''{header_query}{header} VARCHAR(1500),'''
+    
+    
+    table_name = str(file.filename).split('.')[0]
+    create_query = f'''
+    DROP TABLE IF EXISTS {table_name};
+    CREATE TABLE {table_name} (
+    {header_query}
+    );'''
+
+    cursor.execute(create_query)
+    conn.commit()
+
+    header_string = ""
+    for header in headers:
+        header_string = f"{header_string}, {header}"
+    header_string = header_string[2:]
+
+
+    first = True
+    for row in csv_list:
+        insert_query = ''''''
+        insert_string = ""
+        if first == True:
+            first = False
+            continue    
+        else:
+            for i in row:
+                #TODO simplify replacing of these characters that cause issues
+                entry = str(i).replace(" ", "_").replace(":","-").replace("'","")
+                entry = f"'{entry}'"
+                insert_string = f'''{insert_string}, {entry}'''
+            insert_string = insert_string[2:]
+            insert_query = f'''INSERT INTO {table_name} VALUES ({insert_string});'''
+            cursor.execute(insert_query)
+            
+    conn.commit()
+
+    return insert_query
 
 @app.get("/test_table/download")
 def test_table_download():
-    # os.remove('temp.csv')
 
     query_all = '''SELECT * FROM test_table'''
     users = cursor.execute(query_all)
@@ -107,3 +164,4 @@ def test_table_download():
             writer.writerow([row.id, row.first_name, row.last_name, row.address, row.phone_number])
     
     return FileResponse('app/csv/temp.csv')
+
