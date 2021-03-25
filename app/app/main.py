@@ -3,6 +3,7 @@ import csv
 import os
 from os import path, read
 import re
+from fastapi import requests
 import pandas as pd
 import sys
 from io import StringIO
@@ -42,7 +43,6 @@ def index(
     ):
     return templates.TemplateResponse('index.html', context={'request': request})
 
-
 @app.get("/test_table")
 def test_table(request: Request):
     
@@ -58,7 +58,6 @@ def test_table(request: Request):
     );
     '''
     cursor.execute(create_query)
-    conn.commit()
     for i in range(5):
         first_name = f"'{random_gen.person_entry().first_name}',"
         last_name = f"'{random_gen.person_entry().last_name}',"
@@ -74,28 +73,47 @@ def test_table(request: Request):
     query_all = '''SELECT * FROM test_table'''
     users = cursor.execute(query_all)
 
-    # if os.path.exists('app/csv/temp.csv'):
-    #     os.remove('app/csv/temp.csv')
-
-    # with open('app/csv/temp.csv', 'w', newline='') as file:
-    #     writer = csv.writer(file)
-    #     for row in users:
-    #         writer.writerow([row.id, row.first_name, row.last_name, row.address, row.phone_number])
-
     return templates.TemplateResponse('test_table.html', context={
         'request': request,
         'users': users,
         })
 
+@app.get("/dataset_browser")
+async def datasets(
+    request: Request
+):
+    query_tables = '''
+    SELECT table_name [dbo]
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE table_type = 'BASE TABLE';
+    '''
+    tables = cursor.execute(query_tables).fetchall()
+
+    return templates.TemplateResponse('dataset_browser.html', context={'request': request, 'tables': tables})
+
 @app.get("/upload/")
 async def upload_csv(
     request: Request,
 ):
-
     return templates.TemplateResponse('upload.html', context={'request': request})
 
+@app.get("/view_dataset")
+async def view_dataset(
+    request: Request,
+    table_name
+):
+    columns_query = f'''SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='{table_name}';'''
+    query_all = f'''SELECT * FROM {table_name};'''
+
+    columns = cursor.execute(columns_query).fetchall()
+    data = cursor.execute(query_all)
+    return templates.TemplateResponse('view_dataset.html', context={'request': request, 'data': data, 'columns': columns})
+
 @app.post("/uploadfile/")
-async def upload_csv_post(file: UploadFile = File(...)):
+async def upload_csv_post(
+    request: Request,
+    file: UploadFile = File(...)   
+    ):
     
     data = await file.read()
     data = data.decode()
@@ -147,7 +165,7 @@ async def upload_csv_post(file: UploadFile = File(...)):
             
     conn.commit()
 
-    return insert_query
+    return templates.TemplateResponse('upload_success.html', context={'request': request})
 
 @app.get("/test_table/download")
 def test_table_download():

@@ -1,0 +1,27 @@
+<html>
+    <head>
+
+    </head>
+    <body>
+        <table>
+            <thead>
+                <tr>
+                    {% for column in columns %}
+                        <th>{{column[0]}}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for cell in data %}
+                <tr>
+                    <td>{{cell[0]}}</td>
+                    <!-- {% for i in cell %}
+                    <td>{{[]}}</td>
+                    {% endfor %} -->
+                </tr>
+                {% endfor %}
+            </tbody>
+            
+        </table>
+    </body>
+</html>

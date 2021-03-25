@@ -1,0 +1,20 @@
+<html>
+    <head>
+
+    </head>
+    <body>
+        <h2>Datasets</h2>
+        <table>
+            <tr>
+                <th>Dataset Name</th>
+            </tr>
+            {% for table in tables %}
+                <tr>
+                    <td><a href="/view_dataset?table_name={{table[0]}}">{{table[0]}}</a></td>
+                </tr>
+            {% endfor %}
+            
+        </table>
+        
+    </body>
+</html>
