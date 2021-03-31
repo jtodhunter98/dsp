@@ -30,13 +30,6 @@ csv.field_size_limit(sys.maxsize)
 
 cursor = conn.cursor()
 
-def numbers(number):
-    array = []
-    for i in range (3):
-        array.append(number * 2)
-
-    return array
-
 @app.get("/")
 def index(
     request: Request,
@@ -91,23 +84,62 @@ async def datasets(
 
     return templates.TemplateResponse('dataset_browser.html', context={'request': request, 'tables': tables})
 
-@app.get("/upload/")
-async def upload_csv(
-    request: Request,
-):
-    return templates.TemplateResponse('upload.html', context={'request': request})
-
 @app.get("/view_dataset")
 async def view_dataset(
     request: Request,
     table_name
 ):
     columns_query = f'''SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='{table_name}';'''
-    query_all = f'''SELECT * FROM {table_name};'''
+    query_all = f'''SELECT TOP 50 * FROM {table_name};'''
+    
 
     columns = cursor.execute(columns_query).fetchall()
     data = cursor.execute(query_all)
-    return templates.TemplateResponse('view_dataset.html', context={'request': request, 'data': data, 'columns': columns})
+    
+    return templates.TemplateResponse('view_dataset.html', context={
+        'request': request, 
+        'data': data, 
+        'columns': columns,
+        'table_name': table_name})
+
+@app.get("/view_dataset/download")
+def test_table_download(table_name):
+
+    query_all = f'''SELECT * FROM {table_name}'''
+    columns_query = f'''SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='{table_name}';'''
+   
+    
+
+    if os.path.exists('app/csv/temp.csv'):
+        os.remove('app/csv/temp.csv')
+
+    columns = cursor.execute(columns_query)
+    headers = []
+    for column in columns:
+        headers.append(column[0])
+    with open('app/csv/temp.csv', 'w', newline='') as file:
+        writer = csv.writer(file, delimiter=',')
+        writer.writerow(headers)
+
+    data = cursor.execute(query_all)
+    with open('app/csv/temp.csv', 'a', newline='') as file:
+        writer = csv.writer(file, delimiter=',')
+        row_list = []
+        for row in data:
+            row_list = []
+            for cell in row:
+                row_list.append(cell)
+            writer.writerow(row_list)
+    
+    file.close()
+            
+    return FileResponse(path='app/csv/temp.csv', filename=f'{table_name}.csv')
+
+@app.get("/upload/")
+async def upload_csv(
+    request: Request,
+):
+    return templates.TemplateResponse('upload.html', context={'request': request})
 
 @app.post("/uploadfile/")
 async def upload_csv_post(
@@ -141,45 +173,39 @@ async def upload_csv_post(
     conn.commit()
 
     header_string = ""
+    header_count = 0
     for header in headers:
         header_string = f"{header_string}, {header}"
+        header_count = header_count + 1
     header_string = header_string[2:]
 
-
     first = True
+    
+    values_list = []
     for row in csv_list:
-        insert_query = ''''''
-        insert_string = ""
+        
         if first == True:
             first = False
             continue    
         else:
+            insert_list = []
             for i in row:
                 #TODO simplify replacing of these characters that cause issues
                 entry = str(i).replace(" ", "_").replace(":","-").replace("'","")
-                entry = f"'{entry}'"
-                insert_string = f'''{insert_string}, {entry}'''
-            insert_string = insert_string[2:]
-            insert_query = f'''INSERT INTO {table_name} VALUES ({insert_string});'''
-            cursor.execute(insert_query)
-            
+                insert_list.append(entry)
+            values_list.append(insert_list)
+
+    placeholders = ''
+
+    for i in range(header_count):
+        placeholders = f'{placeholders}, ?'
+    placeholders = placeholders[2:]
+
+    insert_query = f'''INSERT INTO {table_name} VALUES ({placeholders})'''
+    cursor.fast_executemany = True
+    cursor.executemany(insert_query, values_list)
+
     conn.commit()
 
-    return templates.TemplateResponse('upload_success.html', context={'request': request})
-
-@app.get("/test_table/download")
-def test_table_download():
-
-    query_all = '''SELECT * FROM test_table'''
-    users = cursor.execute(query_all)
-
-    if os.path.exists('app/csv/temp.csv'):
-        os.remove('app/csv/temp.csv')
-
-    with open('app/csv/temp.csv', 'w', newline='') as file:
-        writer = csv.writer(file)
-        for row in users:
-            writer.writerow([row.id, row.first_name, row.last_name, row.address, row.phone_number])
-    
-    return FileResponse('app/csv/temp.csv')
-
+    return templates.TemplateResponse('upload_success.html', context={'request': request, 'table_name': table_name})
+    # return insert_list
