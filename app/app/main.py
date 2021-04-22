@@ -159,7 +159,7 @@ async def upload_csv_post(
     header_query = ""
 
     for header in headers:
-        header_query = f'''{header_query}{header} VARCHAR(1500),'''
+        header_query = f'''{header_query}{header} NVARCHAR(MAX),'''
     
     
     table_name = str(file.filename).split('.')[0]
